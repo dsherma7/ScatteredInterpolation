@@ -1,0 +1,45 @@
+<html>
+
+<head>    
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+    <link href="css/main.css" rel="stylesheet">       
+    <!-- D3, JQuery, and THREE -->
+    <!-- <script src="https://d3js.org/d3.v4.js"></script>     -->
+    <!-- <script src="http://threejs.org/build/three.js"></script> -->
+    <script src="./js/d3.v4.min.js"></script>
+    <script src="./js/three.min.js"></script>
+    <script src="./js/math.min.js"></script>
+    <!-- Supporting Libraries for THREE -->
+    <script src="./js/dat.gui.min.js"></script>
+    <script src="./js/stats.min.js"></script>
+    <script src="./js/OrbitControls.js"></script>
+    <!-- Custom Fonts -->
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+    <link href='https://fonts.googleapis.com/css?family=Roboto:100' rel='stylesheet' type='text/css'>
+
+</head>
+
+<body>
+    <div id="container0" class="container"></div>
+    <div id="container1" class="container"></div>
+    <div id="toolbar" class='transfer_func'></div>
+    <div id="interpolate_select" class="selector">
+        <table> 
+            <tr>
+                <td class="tbl-bold"> Select Palette: </td>
+                <td class="tbl-normal"> <select id="palette"> </select> </td>
+                <td class="tbl-normal"> <button id="reset"> Reset </button>  </td>
+            </tr> 
+        </table>
+    </div>
+
+    <script src="./js/transfer_func.js"> </script>      
+    <script src="./js/phong.js"> </script>      
+    <script src="./js/interpolators.js"> </script>       
+    <script src="./js/knearest.js"> </script>   
+    <script src="./js/util.js"> </script>   
+    <script src="./js/main.js"> </script>    
+</body>
+
+</html>

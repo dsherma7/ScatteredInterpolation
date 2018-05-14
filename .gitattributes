@@ -1,0 +1,11 @@
+data/Hourglass_Full.csv filter=lfs diff=lfs merge=lfs -text
+data/Sinusoidal.csv filter=lfs diff=lfs merge=lfs -text
+data/CreateScatteredData.m filter=lfs diff=lfs merge=lfs -text
+data/Gaussian.csv filter=lfs diff=lfs merge=lfs -text
+data/Gaussian_Full.csv filter=lfs diff=lfs merge=lfs -text
+data/Skull.csv filter=lfs diff=lfs merge=lfs -text
+data/Wave.csv filter=lfs diff=lfs merge=lfs -text
+data/Wave_Full.csv filter=lfs diff=lfs merge=lfs -text
+data/CreateScatteredData.m~ filter=lfs diff=lfs merge=lfs -text
+data/Hourglass.csv filter=lfs diff=lfs merge=lfs -text
+data/Sinusoidal_Full.csv filter=lfs diff=lfs merge=lfs -text
