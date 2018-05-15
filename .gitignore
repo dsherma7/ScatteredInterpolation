@@ -1,0 +1,7 @@
+# Tex Stuff
+*.gz
+*.log
+*.aux
+*.out
+*.tex
+documentation/Functions.png

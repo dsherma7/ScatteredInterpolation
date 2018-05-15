@@ -7,7 +7,7 @@ var w = width / 3, h = height * 0.5;
 var paused = false, animating = false;
 var last = new Date().getTime();
 var down = false, sx = 0, sy = 0;
-var palette, guiControlss=[], guis=[];
+var palette, guiControlss=[], guis=[], color_given=[true,true];
 
 // Phong Lighting Variables
 var sunDirection = [3.0, -2.0, 0.0],
@@ -22,7 +22,7 @@ var scenes=[], pointGeos=[], pointGeo2s=[], scatterPlots=[], interpolatedPoints=
 var datasets = [], xExent, yExent, zExent;
 var data_files = [ 'Sinusoidal','Wave', 'Gaussian', 'Hourglass' ];
 var last_data = ['Sinusoidal', 'Sinusoidal'];
-var k = 10; var knn_classes = [], last_neighbors = [k,k];
+var k = 10; var knn_classes = [], last_neighbors = [k,k], last_triangulate = [false, false];
 
 // Scales and Formatters
 var format = d3.format("+.3f");
@@ -34,7 +34,7 @@ var colour = d3.scaleSequential(d3.interpolateRainbow),
     sScale = d3.scaleLinear().range([5, 0.2]);
 
 function init() {
-    // Load both sets of Shaders and starts the program
+    // Load both sets of Shaders and start the program
     loadTextResource('./gl/fragmentShader.glsl', function (fs_err, fs) {
         if (fs_err) {
             alert('Fatal error getting vertex shader (see console)');
@@ -56,6 +56,9 @@ function init() {
 loadData('Sinusoidal',0,function(){});
 loadData('Sinusoidal',1,init);
 
+/* --------------------------------------
+   Initial all webGL elements with GL shaders
+   -------------------------------------- */
 function init_render(idx,vertexShader,fragmentShader) {
 
     guiControlss[idx] = new function() {
@@ -68,6 +71,7 @@ function init_render(idx,vertexShader,fragmentShader) {
         this.transparent = true;
         this.phong = false;
         this.full = false;
+        this.triangulate = false;
     };    
 
     renderers[idx] = new THREE.WebGLRenderer();
@@ -89,7 +93,6 @@ function init_render(idx,vertexShader,fragmentShader) {
     scenes[idx]             = new THREE.Scene();
     scenes[idx].add(scatterPlots[idx]);
     scenes[idx].add(interpolatedPoints[idx]);
-    // scatterPlots[idx].rotation.y = 0;
 
     // Basic Shader Material for Everything
     shaderMaterials[idx] = new THREE.ShaderMaterial( {
@@ -108,9 +111,6 @@ function init_render(idx,vertexShader,fragmentShader) {
                         {type: "fv", value: new Float32Array(3)}}
     });
 
-    /* --------------------------------
-              Given points
-       -------------------------------- */
     draw_plot(idx); 
 
     /* --------------------------------
@@ -144,7 +144,12 @@ function draw_plot(idx) {
 
         vertices = vertices.concat([x, y, z]);
         var rgb = d3.rgb(getColor(idx, datasets[idx][i].f));
-        colors = colors.concat([rgb.r / 255,rgb.g / 255,rgb.b / 255]);
+        
+        if (color_given[idx]){        
+            colors = colors.concat([rgb.r / 255,rgb.g / 255,rgb.b / 255]);
+        }else{
+            colors = colors.concat([0.5,0.5,0.5])
+        }
         alphas.push(getOpacity(idx, datasets[idx][i].f));
         values.push(datasets[idx][i].f);
     }
@@ -153,38 +158,42 @@ function draw_plot(idx) {
     pointGeos[idx].addAttribute('alpha',    new THREE.BufferAttribute( new Float32Array(alphas),   1 ) );
     pointGeos[idx].addAttribute('value',    new THREE.BufferAttribute( new Float32Array(values),   1 ) );
     var points = new THREE.Points(pointGeos[idx], shaderMaterials[idx]);
-    // interpolatedPoints[idx] = new THREE.Object3D();
-    // interpolatedPoints[idx] = new THREE.Object3D();
     scatterPlots[idx].add(points);
     scenes[idx].add(scatterPlots[idx])
 
-    // Add Interpolated Points    
     addInterpolatedPoints(idx);  
 }
 
-
+/* ---------------------------------------------
+      Builds interpolated points for plot(idx)
+   --------------------------------------------- */
 function addInterpolatedPoints(idx) {
 
     var sz = +guiControlss[idx].pts_added;
 
-    if (guiControlss[idx].neighbors != last_neighbors[idx] || 
-        guiControlss[idx].model     != last_data[idx]) {        
+
+    scenes[idx].children.filter(d=>d.name=="polygon").forEach(d=>scenes[idx].remove(d))
+
+    if (guiControlss[idx].neighbors   != last_neighbors[idx] || 
+        guiControlss[idx].model       != last_data[idx]      ||
+        guiControlss[idx].triangulate != last_triangulate[idx]) {        
+        
         delete pointGeo2s[idx].attributes.position;
         delete pointGeo2s[idx].attributes.color;
         delete pointGeo2s[idx].attributes.alpha;
         delete pointGeo2s[idx].attributes.value;
 
-        last_neighbors[idx] = guiControlss[idx].neighbors;
-        last_data[idx]      = guiControlss[idx].model;
+        last_neighbors[idx]   = guiControlss[idx].neighbors;
+        last_data[idx]        = guiControlss[idx].model;
+        last_triangulate[idx] = guiControlss[idx].triangulate;
     }
-
 
     if (guiControlss[idx].neighbors > knn_classes[idx].k){
         knn_classes[idx] = new KNN.ItemList(d3.max([2*knn_classes[idx].k, 2*guiControlss[idx].neighbors]));
         datasets[idx].forEach(d => knn_classes[idx].add( new KNN.Item(d) ));                
     }
 
-    var vertices = [], colors = [], alphas = [], values = [];
+    var vertices = [], colors = [], alphas = [], values = [], polygons = [];
     if (pointGeo2s[idx].attributes.alpha){
         sz = sz - pointGeo2s[idx].attributes.alpha.array.length;
         
@@ -201,11 +210,11 @@ function addInterpolatedPoints(idx) {
         pointGeo2s[idx].attributes.position.array.forEach(d=>vertices.push(d));
         pointGeo2s[idx].attributes.color.array.forEach(d=>colors.push(d));
         pointGeo2s[idx].attributes.alpha.array.forEach(d=>alphas.push(d));
-        pointGeo2s[idx].attributes.value.array.forEach(d=>values.push(d));        
+        pointGeo2s[idx].attributes.value.array.forEach(d=>values.push(d));     
+
     }
     
     for (var i=0; i < sz; i++){
-    // for (var j=0; j < sz; j++){
         var x = xScale.domain()[0] + (xScale.domain()[1] - xScale.domain()[0]) / sz * Math.round(Math.random()*sz);
         var z = zScale.domain()[0] + (zScale.domain()[1] - zScale.domain()[0]) / sz * Math.round(Math.random()*sz);
         var y = yScale.domain()[0] + (yScale.domain()[1] - yScale.domain()[0]) / sz * Math.round(Math.random()*sz);
@@ -223,8 +232,32 @@ function addInterpolatedPoints(idx) {
         var rgb = d3.rgb(getColor(idx, best.f));
         colors = colors.concat([rgb.r / 255,rgb.g / 255,rgb.b / 255]);
         alphas.push(getOpacity(idx, inter_pt.f));
-        values.push(inter_pt.f);          
-    // }
+        values.push(inter_pt.f); 
+
+        if (guiControlss[idx].triangulate){
+            var points = [];
+            for (var n=0; n < neighbors.length; n++)
+                points.push(new THREE.Vector3( xScale(neighbors[n].x-inter_pt.x), 
+                                               yScale(neighbors[n].y-inter_pt.y), 
+                                               zScale(neighbors[n].z-inter_pt.z) ))
+
+            var geometry = new THREE.ConvexGeometry( points );
+            geometry.translate(x,y,z);            
+
+            var geoCol = getColor(idx, inter_pt.f);
+            var geoAlpha = geoCol.opacity;
+            geoCol.opacity = 1.0;
+            var material = new THREE.MeshBasicMaterial( {
+                color: d3.rgb(geoCol).toString(),
+                opacity: getOpacity(idx, inter_pt.f),
+                transparent: guiControlss[idx].transparent
+            } );
+
+            var mesh = new THREE.Mesh( geometry, material);
+            mesh.name = "polygon";
+
+            scenes[idx].add( mesh );
+        }
     }
 
     pointGeo2s[idx].addAttribute('position', new THREE.BufferAttribute( new Float32Array(vertices), 3 ) );
@@ -238,19 +271,18 @@ function addInterpolatedPoints(idx) {
     pointGeo2s[idx].attributes.value.needsUpdate = true;
 
     var points = new THREE.Points(pointGeo2s[idx], shaderMaterials[idx]);
-    // interpolatedPoints[idx] = new THREE.Object3D();
     interpolatedPoints[idx].add(points);
     scenes[idx].add(interpolatedPoints[idx])
 }
 
 
-
+/* --------------------------------------
+      Functions run at each interval
+   -------------------------------------- */
 function animate(t) {
-
     requestAnimationFrame( animate );
     render();
 }
-
 function render() {
 
     for (var idx=0; idx<guis.length; idx++){
@@ -266,7 +298,9 @@ function render() {
     }
 }
 
-
+/* --------------------------------------
+      Loads & stores a dataset locally
+   -------------------------------------- */
 function loadData(file, idx, callback) {
     function type(d,i) { datasets[idx][i] = { x:+d.x, y:+d.y, z:+d.z, f:+d.f }}
     datasets[idx] = [];
@@ -318,7 +352,7 @@ function updateGUI()
 
         guis[idx].add(guiControlss[idx], 'model', data_files )
                  .name("Dataset").onChange(set_load_data);
-        guis[idx].add(guiControlss[idx], 'scheme', [ 'Hardy', 'Shepard', 'KNN' ])
+        guis[idx].add(guiControlss[idx], 'scheme', [ 'Hardy', 'Shepard', 'KNN'])
                  .name("Interpolation").onFinishChange(update_points);    
         guis[idx].add(guiControlss[idx], 'neighbors', 2, 50)
                  .step(1).name("# Neighbors").onFinishChange(update_points);
@@ -328,10 +362,12 @@ function updateGUI()
                  .name("Pt Size");
         guis[idx].add(guiControlss[idx], 'transparent')
                  .name('Transparent');
-        guis[idx].add(guiControlss[idx], 'phong')
-                 .name('Use Phong');
         guis[idx].add(guiControlss[idx], 'full')
                  .name('Full Plot').onChange(set_load_data);
+        guis[idx].add(guiControlss[idx], 'triangulate')
+                 .name('Triangulate').onChange(set_load_data);
+        guis[idx].add(guiControlss[idx], 'phong')
+                 .name('Use Phong');
         
         d3.select(guis[idx].domElement)
           .selectAll('div').classed(idx,true)
@@ -343,7 +379,9 @@ function updateGUI()
       
 }
 
-
+/* --------------------------  
+      Resize all elements 
+   -------------------------- */
 function onWindowResize( event ) {
 
     for (var idx=0; idx<guis.length; idx++){
