@@ -9,3 +9,7 @@ data/Wave_Full.csv filter=lfs diff=lfs merge=lfs -text
 data/CreateScatteredData.m~ filter=lfs diff=lfs merge=lfs -text
 data/Hourglass.csv filter=lfs diff=lfs merge=lfs -text
 data/Sinusoidal_Full.csv filter=lfs diff=lfs merge=lfs -text
+data/Sinusoidal_Rest.csv filter=lfs diff=lfs merge=lfs -text
+data/Wave_Rest.csv filter=lfs diff=lfs merge=lfs -text
+data/Gaussian_Rest.csv filter=lfs diff=lfs merge=lfs -text
+data/Hourglass_Rest.csv filter=lfs diff=lfs merge=lfs -text

@@ -21,8 +21,9 @@ var scenes=[], pointGeos=[], pointGeo2s=[], scatterPlots=[], interpolatedPoints=
 // Data Sources
 var datasets = [], xExent, yExent, zExent;
 var data_files = [ 'Sinusoidal','Wave', 'Gaussian', 'Hourglass' ];
-var last_data = ['Sinusoidal', 'Sinusoidal'];
-var k = 10; var knn_classes = [], last_neighbors = [k,k], last_triangulate = [false, false];
+var last_data = ['Gaussian', 'Gaussian'];
+var k = 10; var knn_classes = [], last_neighbors = [k,k], 
+                last_triangulate = [false, false], last_scheme = ['Shepard', 'Shepard'];
 
 // Scales and Formatters
 var format = d3.format("+.3f");
@@ -53,8 +54,8 @@ function init() {
         }
     });
 };
-loadData('Sinusoidal',0,function(){});
-loadData('Sinusoidal',1,init);
+loadData('Gaussian',0,function(){});
+loadData('Gaussian',1,init);
 
 /* --------------------------------------
    Initial all webGL elements with GL shaders
@@ -62,7 +63,7 @@ loadData('Sinusoidal',1,init);
 function init_render(idx,vertexShader,fragmentShader) {
 
     guiControlss[idx] = new function() {
-        this.model = 'Sinusoidal';
+        this.model = 'Gaussian';
         this.scheme = 'Shepard';
         this.pts_added = 1000;
         this.neighbors = 4;
@@ -78,7 +79,7 @@ function init_render(idx,vertexShader,fragmentShader) {
     renderers[idx].setSize(w, h);
     renderers[idx].setClearColor(0x111111, 0.2);  // Changes BG colors
 
-    cameras[idx] = new THREE.PerspectiveCamera(60, w / h, 0.01, 1000);
+    cameras[idx] = new THREE.PerspectiveCamera(60, w / h, 0.001, 500);
     cameras[idx].position.z = 200;
 
     containers[idx] = document.getElementById('container'+idx);
@@ -164,6 +165,127 @@ function draw_plot(idx) {
     addInterpolatedPoints(idx);  
 }
 
+/* ----------------------------------------------
+      Draw the Points removed from the mesh grid
+   ---------------------------------------------- */
+function draw_rest(idx) {
+
+    var new_data = [];
+    function type(d,i) { new_data[i] = { x:+d.x, y:+d.y, z:+d.z, f:+d.f }}
+    
+    scenes[idx].children.filter(d=>d.name=="remaining").forEach(d=>scenes[idx].remove(d));
+    if (guiControlss[idx].full){
+        file = guiControlss[idx].model + "_Rest";
+        d3.csv("./data/"+file+".csv", type, function(d){
+
+            new_data.forEach(function(d){
+                datasets[idx].push(d);
+                knn_classes[idx].add( new KNN.Item(d) )
+            });
+
+            var pointCount = new_data.length;    
+            var vertices = [], colors = [], alphas = [], values = [];
+            for (var i = 0; i < pointCount; i ++) {
+                var x = xScale(new_data[i].x);
+                var y = yScale(new_data[i].y);
+                var z = zScale(new_data[i].z);
+
+                vertices = vertices.concat([x, y, z]);
+                var rgb = d3.rgb(getColor(idx, new_data[i].f));
+                
+                if (color_given[idx]){        
+                    colors = colors.concat([rgb.r / 255,rgb.g / 255,rgb.b / 255]);
+                }else{
+                    colors = colors.concat([0.5,0.5,0.5])
+                }
+                alphas.push(getOpacity(idx, new_data[i].f));
+                values.push(new_data[i].f);
+            }
+
+            var new_pointGeo = new THREE.BufferGeometry();
+
+            new_pointGeo.addAttribute('position', new THREE.BufferAttribute( new Float32Array(vertices), 3 ) );
+            new_pointGeo.addAttribute('color',    new THREE.BufferAttribute( new Float32Array(colors),   3 ) );    
+            new_pointGeo.addAttribute('alpha',    new THREE.BufferAttribute( new Float32Array(alphas),   1 ) );
+            new_pointGeo.addAttribute('value',    new THREE.BufferAttribute( new Float32Array(values),   1 ) );
+            
+            var points = new THREE.Points(new_pointGeo, shaderMaterials[idx]);
+            points.name = "remaining";
+            
+            var scatterPlot = new THREE.Object3D();
+            scatterPlot.add(points);
+            scatterPlot.name = "remaining";
+            
+            scenes[idx].add(scatterPlot);
+        })
+    }else {        
+        loadData(guiControlss[idx].model, idx, function(){
+            draw_plot(idx);
+            addInterpolatedPoints(idx);
+        });
+    }
+    
+}
+
+/* ---------------------------------------------
+    Adds triangulation between points
+   --------------------------------------------- */
+function addTriangulation(idx) {
+
+    var sz = +guiControlss[idx].pts_added;
+
+    scenes[idx].children.filter(d=>d.name=="polygon").forEach(d=>scenes[idx].remove(d))
+    if (guiControlss[idx].triangulate){
+    for (var i=0; i < sz; i++){
+        var x = xScale.domain()[0] + (xScale.domain()[1] - xScale.domain()[0]) / sz * Math.round(Math.random()*sz);
+        var z = zScale.domain()[0] + (zScale.domain()[1] - zScale.domain()[0]) / sz * Math.round(Math.random()*sz);
+        var y = yScale.domain()[0] + (yScale.domain()[1] - yScale.domain()[0]) / sz * Math.round(Math.random()*sz);
+
+        var node = {'x':x,'y':y,'z':z};
+        var best = knn_classes[idx].getClosest(node);
+        var neighbors = best.neighbors.slice(0,guiControlss[idx].neighbors);
+        var inter_pt = interpolate(neighbors, node, guiControlss[idx].scheme);
+
+        var x = xScale(node.x);
+        var y = yScale(inter_pt.y);
+        var z = zScale(node.z);        
+
+        
+        var points = [];
+        for (var n=0; n < neighbors.length; n++)
+            points.push(new THREE.Vector3( xScale(neighbors[n].x-best.x), 
+                                           yScale(neighbors[n].y-best.y), 
+                                           zScale(neighbors[n].z-best.z) ))
+
+        var geometry = new THREE.ConvexGeometry( points );
+        if (guiControlss[idx].model == 'Gaussian'){y = y+50;}
+        geometry.translate(x,y,z);            
+
+        var geoCol = getColor(idx, inter_pt.f);
+        var geoAlpha = geoCol.opacity;
+        geoCol.opacity = 1.0;
+        var material = new THREE.MeshBasicMaterial( {
+            color: d3.rgb(geoCol).toString(),
+            opacity: getOpacity(idx, inter_pt.f),
+            transparent: guiControlss[idx].transparent
+        } );
+
+        var mesh = new THREE.Mesh( geometry, material);
+        mesh.name = "polygon";
+
+        scenes[idx].add( mesh );
+        
+    }
+    }else{
+        loadData(guiControlss[idx].model, idx, function(){
+            draw_plot(idx);
+            addInterpolatedPoints(idx);
+        });        
+    }   
+
+}
+
+
 /* ---------------------------------------------
       Builds interpolated points for plot(idx)
    --------------------------------------------- */
@@ -171,12 +293,10 @@ function addInterpolatedPoints(idx) {
 
     var sz = +guiControlss[idx].pts_added;
 
-
-    scenes[idx].children.filter(d=>d.name=="polygon").forEach(d=>scenes[idx].remove(d))
-
     if (guiControlss[idx].neighbors   != last_neighbors[idx] || 
         guiControlss[idx].model       != last_data[idx]      ||
-        guiControlss[idx].triangulate != last_triangulate[idx]) {        
+        guiControlss[idx].triangulate != last_triangulate[idx] ||
+        guiControlss[idx].schme       != last_scheme[idx]) {        
         
         delete pointGeo2s[idx].attributes.position;
         delete pointGeo2s[idx].attributes.color;
@@ -231,33 +351,8 @@ function addInterpolatedPoints(idx) {
         vertices = vertices.concat([x, y, z]);
         var rgb = d3.rgb(getColor(idx, best.f));
         colors = colors.concat([rgb.r / 255,rgb.g / 255,rgb.b / 255]);
-        alphas.push(getOpacity(idx, inter_pt.f));
-        values.push(inter_pt.f); 
-
-        if (guiControlss[idx].triangulate){
-            var points = [];
-            for (var n=0; n < neighbors.length; n++)
-                points.push(new THREE.Vector3( xScale(neighbors[n].x-inter_pt.x), 
-                                               yScale(neighbors[n].y-inter_pt.y), 
-                                               zScale(neighbors[n].z-inter_pt.z) ))
-
-            var geometry = new THREE.ConvexGeometry( points );
-            geometry.translate(x,y,z);            
-
-            var geoCol = getColor(idx, inter_pt.f);
-            var geoAlpha = geoCol.opacity;
-            geoCol.opacity = 1.0;
-            var material = new THREE.MeshBasicMaterial( {
-                color: d3.rgb(geoCol).toString(),
-                opacity: getOpacity(idx, inter_pt.f),
-                transparent: guiControlss[idx].transparent
-            } );
-
-            var mesh = new THREE.Mesh( geometry, material);
-            mesh.name = "polygon";
-
-            scenes[idx].add( mesh );
-        }
+        alphas.push(getOpacity(idx, best.f));
+        values.push(inter_pt.f);         
     }
 
     pointGeo2s[idx].addAttribute('position', new THREE.BufferAttribute( new Float32Array(vertices), 3 ) );
@@ -363,9 +458,9 @@ function updateGUI()
         guis[idx].add(guiControlss[idx], 'transparent')
                  .name('Transparent');
         guis[idx].add(guiControlss[idx], 'full')
-                 .name('Full Plot').onChange(set_load_data);
+                 .name('Full Plot').onChange(function(){draw_rest(this.domElement.classList.contains('0')?0:1)});
         guis[idx].add(guiControlss[idx], 'triangulate')
-                 .name('Triangulate').onChange(set_load_data);
+                 .name('Triangulate').onChange(function(){addTriangulation(this.domElement.classList.contains('0')?0:1)});
         guis[idx].add(guiControlss[idx], 'phong')
                  .name('Use Phong');
         

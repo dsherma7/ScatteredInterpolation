@@ -1,3 +1,7 @@
+/* --------------------------------------------
+    Class for computing the nearest neighbors
+    as data is streamed into the class.
+   ------------------------------------------- */
 (function () {
 	
 	window.KNN = {};
@@ -65,8 +69,9 @@
 		var dx = node.x - this.x;
 		var dy = node.y - this.y;
 		var dz = node.z - this.z;
+		var df = node.f - this.f;
 
-		return Math.sqrt( dx*dx + dy*dy + dz*dz );
+		return Math.sqrt( dx*dx + dy*dy + dz*dz + df*df );
 	}
 
 
@@ -93,7 +98,7 @@
 	KNN.ItemList.prototype.getClosest = function (node) {		
 		var min = 1000, best = this.nodes[0];
 		this.nodes.forEach(function(d){
-			var dist = (d.x - node.x)**2 + (d.z - node.z)**2 ;
+			var dist = (d.x - node.x)**2 + 0*(d.y - node.y)**2 + (d.z - node.z)**2 ;
 			if (dist < min){
 				min = dist;
 				best = d;
